@@ -1,6 +1,6 @@
 # DAX Expression Optimizer
 
-Automated DAX optimization tool using GitHub Copilot API. Optimizes your DAX expressions for performance, handles edge cases, and adds inline comments.
+Automated DAX optimization tool using GitHub Copilot API. Optimizes your DAX expressions for performance, handles edge cases, and adds inline comments. **Outputs clean Markdown files** for easy reading.
 
 ---
 
@@ -49,7 +49,7 @@ export GITHUB_TOKEN="ghp_your_token_here"
 ### 4. Run the Script
 
 ```bash
-python dax_optimizer.py input_file.txt output_file.txt
+python dax_optimizer.py input_file.txt output.md
 ```
 
 ---
@@ -59,81 +59,125 @@ python dax_optimizer.py input_file.txt output_file.txt
 ### Basic Command
 
 ```bash
-python dax_optimizer.py <input_file> <output_file>
+python dax_optimizer.py <input_file> <output_file.md>
 ```
 
 ### Example
 
 ```bash
-python dax_optimizer.py basketball_measures.txt optimized_basketball_measures.txt
+python dax_optimizer.py basketball_measures.txt optimized_basketball.md
 ```
+
+**Note:** The output file will automatically get a `.md` extension if you don't include it.
 
 ---
 
 ## 📄 Input File Format
 
-Your input file should contain DAX expressions. Two formats are supported:
+Your input file should follow this format:
 
-### Option 1: Separated by Blank Lines (Recommended)
+```
+DAX MEASURES - Folder1
+=========================
 
-```dax
-Total Points = SUM(Game[Points])
+[Measure].[Total Points]
 
-Points Per Game = DIVIDE(SUM(Game[Points]), COUNTROWS(Game), 0)
+SUM(Game[Points])
 
-Top Scorer = 
-CALCULATE(
-    MAX(Player[Name]),
-    TOPN(1, Player, Player[Points], DESC)
+--------------------
+
+[Measure].[Points Per Game]
+
+DIVIDE(SUM(Game[Points]), COUNTROWS(Game))
+
+--------------------
+
+[Measure].[Selected Team]
+
+IF( ISFILTERED( Team[Name] ),
+    VALUES( Team[Name] ),
+    "Not Selected"
 )
+
+--------------------
 ```
 
-### Option 2: One Expression Per Line
-
-```dax
-Total Points = SUM(Game[Points])
-Points Per Game = DIVIDE(SUM(Game[Points]), COUNTROWS(Game), 0)
-Top Scorer = CALCULATE(MAX(Player[Name]), TOPN(1, Player, Player[Points], DESC))
-```
+**Key Format Requirements:**
+- Measure names like: `[Measure].[Name]`
+- DAX code follows the measure name
+- Sections separated by dashed lines (`----`)
+- Headers like "DAX MEASURES - Folder1" are optional
 
 ---
 
 ## 📤 Output Format
 
-The script generates a formatted report with:
+The script generates **two files**:
 
-- **Original DAX**: Your input expression
-- **Optimized DAX**: Improved version with inline comments
-- **Improvements Made**: List of specific changes
-- **Edge Cases Handled**: Edge cases addressed (blanks, nulls, division by zero, etc.)
-- **Performance Notes**: Performance considerations
+1. **Main Output (.md)** - Clean Markdown file with formatted results
+2. **Debug Output (_debug.txt)** - Raw API responses for troubleshooting
 
-### Example Output
+### Main Output Structure
 
+The Markdown file includes:
+
+- Table of Contents with clickable links
+- Syntax-highlighted DAX code blocks
+- Organized sections for each measure
+- Clear formatting with emojis for readability
+
+- Table of Contents with clickable links
+- Syntax-highlighted DAX code blocks
+- Organized sections for each measure
+- Clear formatting with emojis for readability
+
+### Example Output Structure
+
+```markdown
+# DAX Optimization Report
+
+**Total Expressions Optimized:** 5
+
+## Table of Contents
+
+1. [Measure].[Total Points]
+2. [Measure].[Points Per Game]
+...
+
+---
+
+## 1. [Measure].[Total Points]
+
+### 📋 Original DAX
+
+```dax
+SUM(Game[Points])
 ```
-════════════════════════════════════════════════════════════════════════════
-                              DAX OPTIMIZATION REPORT
-                           Total Expressions Optimized: 3
-════════════════════════════════════════════════════════════════════════════
 
-════════════════════════════════════════════════════════════════════════════
-EXPRESSION #1
-════════════════════════════════════════════════════════════════════════════
+### ✨ Optimized DAX
 
-┌─ ORIGINAL DAX ─────────────────────────────────────────────────────────────
-│ Total Points = SUM(Game[Points])
-└────────────────────────────────────────────────────────────────────────────
+```dax
+Total Points = 
+-- Sum of points scored across all games
+SUM(Game[Points])
+```
 
-┌─ OPTIMIZED DAX ────────────────────────────────────────────────────────────
-│ Total Points = 
-│ -- Sum of points scored across all games
-│ SUM(Game[Points])
-└────────────────────────────────────────────────────────────────────────────
+### 🔧 Improvements Made
 
-┌─ IMPROVEMENTS MADE ────────────────────────────────────────────────────────
-│ - Added inline comment for clarity
-│ - Expression is already optimal for performance
-└────────────────────────────────────────────────────────────────────────────
+- Added inline comment for clarity
+- Expression is already optimal
+
+### 🛡️ Edge Cases Handled
+
+- Handles blank values correctly
+- Returns 0 for empty tables
+
+### ⚡ Performance Notes
+
+- Efficient for large datasets
+- No context transition overhead
+
+---
 ```
 
 ---
@@ -142,7 +186,7 @@ EXPRESSION #1
 
 ### Model Selection
 
-By default, the script uses `gpt-4o`. To use a faster/cheaper model, edit line 28 in `dax_optimizer.py`:
+By default, the script uses `gpt-4o`. To use a faster/cheaper model, edit line 131 in `dax_optimizer.py`:
 
 ```python
 model="gpt-4o-mini",  # Change from "gpt-4o"
@@ -150,7 +194,7 @@ model="gpt-4o-mini",  # Change from "gpt-4o"
 
 ### Rate Limiting
 
-Default delay between API calls is 1 second. Adjust on line 143:
+Default delay between API calls is 1 second. Adjust on line 261:
 
 ```python
 time.sleep(1)  # Increase if hitting rate limits
@@ -164,6 +208,7 @@ time.sleep(1)  # Increase if hitting rate limits
 2. **Backup Original Files**: Always keep a copy of your original DAX expressions
 3. **Review Output**: Always review optimized expressions before deploying
 4. **Token Validity**: GitHub tokens expire - regenerate if you get authentication errors
+5. **View Markdown**: Use any Markdown viewer (VS Code, Typora, GitHub) to view the output beautifully
 
 ---
 
@@ -187,12 +232,33 @@ export GITHUB_TOKEN="ghp_your_token_here"
 pip install openai
 ```
 
+### "No optimization provided"
+
+**Problem**: Output shows "No optimization provided" for expressions
+
+**Solution**:
+1. Check the debug file (ending in `_debug.txt`) to see the raw API responses
+2. Verify your GitHub token has API access
+3. Try switching to `gpt-4o-mini` model (edit line 131 in script)
+4. The script now has improved parsing - re-download the latest version
+
+If the debug file shows actual optimizations but they're not being parsed, please share the debug output for further help.
+
+### "No DAX expressions found in file!"
+
+**Problem**: Input file format doesn't match expected format
+
+**Solution**: 
+- Make sure measure names start with `[` and contain `]`
+- Ensure sections are separated by dashed lines (`----`)
+- Check that DAX code appears after measure names
+
 ### "File not found"
 
 **Problem**: Input file path is incorrect
 
 **Solution**: 
-- Use full file path: `python dax_optimizer.py /full/path/to/file.txt output.txt`
+- Use full file path: `python dax_optimizer.py C:\path\to\file.txt output.md`
 - Or run from the same directory as your input file
 
 ### Authentication Error
@@ -205,7 +271,7 @@ pip install openai
 
 **Problem**: Too many API calls too quickly
 
-**Solution**: Increase delay in line 143:
+**Solution**: Increase delay in line 261:
 ```python
 time.sleep(2)  # Increase from 1 to 2 seconds
 ```
@@ -243,46 +309,48 @@ The tool focuses on:
 
 ```bash
 # 1. Navigate to your project directory
-cd /path/to/your/dax/files
+cd C:\Users\YourName\Desktop\dax_optimizer
 
-# 2. Set your GitHub token
-export GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxx"
+# 2. Set your GitHub token (Windows PowerShell)
+$env:GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxx"
 
 # 3. Test with one file
-python dax_optimizer.py league_measures.txt optimized_league.txt
+python dax_optimizer.py input_file.txt optimized_output.md
 
-# 4. Review the output
-cat optimized_league.txt
+# 4. Review the output (opens in Markdown viewer)
+code optimized_output.md
 
 # 5. Process remaining files
-python dax_optimizer.py team_measures.txt optimized_team.txt
-python dax_optimizer.py player_measures.txt optimized_player.txt
+python dax_optimizer.py file2.txt optimized_file2.md
+python dax_optimizer.py file3.txt optimized_file3.md
 ```
 
 ---
 
 ## 🔄 Batch Processing Multiple Files
 
-To process multiple files at once, create a bash script:
+To process multiple files at once:
 
+**Windows (PowerShell):**
+```powershell
+$env:GITHUB_TOKEN="your_token_here"
+
+Get-ChildItem *.txt | ForEach-Object {
+    $output = "optimized_$($_.Name.Replace('.txt', '.md'))"
+    Write-Host "Processing $($_.Name)..."
+    python dax_optimizer.py $_.Name $output
+}
+```
+
+**Mac/Linux (Bash):**
 ```bash
-#!/bin/bash
-# batch_process.sh
-
 export GITHUB_TOKEN="your_token_here"
 
 for file in *.txt; do
+    output="optimized_${file%.txt}.md"
     echo "Processing $file..."
-    python dax_optimizer.py "$file" "optimized_$file"
+    python dax_optimizer.py "$file" "$output"
 done
-
-echo "All files processed!"
-```
-
-Run it:
-```bash
-chmod +x batch_process.sh
-./batch_process.sh
 ```
 
 ---
@@ -296,27 +364,52 @@ For issues with:
 
 ---
 
-## 🎓 Sample DAX Expressions
+## 🎓 Sample Input File
 
-### Example Input File (basketball_measures.txt)
+Create a file called `basketball_measures.txt`:
 
-```dax
-Total Points = SUM(Game[Points])
+```
+DAX MEASURES - Basketball Stats
+================================
 
-Average Points Per Game = DIVIDE(SUM(Game[Points]), COUNTROWS(Game))
+[Measure].[Total Points]
 
-Current Season Points = CALCULATE(SUM(Game[Points]), Season[IsCurrent] = TRUE)
+SUM(Game[Points])
 
-Selected Team = VALUES(Team[TeamName])
+--------------------
 
-Win Rate = DIVIDE(COUNTROWS(FILTER(Game, Game[Result] = "Win")), COUNTROWS(Game))
+[Measure].[Points Per Game]
+
+DIVIDE(SUM(Game[Points]), COUNTROWS(Game))
+
+--------------------
+
+[Measure].[Current Season Points]
+
+CALCULATE(SUM(Game[Points]), Season[IsCurrent] = TRUE)
+
+--------------------
+
+[Measure].[Selected Team]
+
+VALUES(Team[TeamName])
+
+--------------------
+
+[Measure].[Win Rate]
+
+DIVIDE(COUNTROWS(FILTER(Game, Game[Result] = "Win")), COUNTROWS(Game))
+
+--------------------
 ```
 
 ### Run Optimization
 
 ```bash
-python dax_optimizer.py basketball_measures.txt optimized_basketball_measures.txt
+python dax_optimizer.py basketball_measures.txt optimized_basketball.md
 ```
+
+Then open `optimized_basketball.md` in any Markdown viewer!
 
 ---
 
@@ -326,7 +419,8 @@ python dax_optimizer.py basketball_measures.txt optimized_basketball_measures.tx
 - 📝 Adds inline comments for maintainability
 - 🛡️ Handles edge cases (blanks, nulls, division by zero)
 - 🚀 Performance improvements for large datasets
-- 📊 Structured output with detailed explanations
+- 📊 **Beautiful Markdown output** with syntax highlighting
+- 🔗 **Clickable Table of Contents** for easy navigation
 - 🔄 Batch processing support
 - 💯 Best practices enforcement
 

@@ -17,40 +17,37 @@ client = OpenAI(
 )
 
 # Optimization instruction template
-COPILOT_INSTRUCTION = """Please review and optimize the following DAX expression.
+COPILOT_INSTRUCTION = """Review and optimize this DAX expression.
 
-Requirements:
-1. The expression must be **efficient** and suitable for use in large semantic models with many visuals.
-2. It must return a **scalar value** (text or numeric), not a table or mixed types.
-3. If the logic involves filters:
-   - Use `ISFILTERED` to detect whether a column is filtered.
-   - Use `HASONEVALUE` or `SELECTEDVALUE` to detect single selections.
-   - Use `CONCATENATEX` to return multiple selected values as a comma-separated string.
-4. Avoid using `VALUES` directly in conditional logic unless wrapped in a scalar function.
-5. Ensure compatibility with visuals such as cards, tables, matrix, and tooltips.
-6. Add inline comments for clarity and maintainability.
-7. Suggest performance improvements if applicable, especially for large datasets or complex filter contexts.
+MEASURE: {measure_name}
 
-This expression is part of a broader model with 100+ DAX measures and visualizations, so the solution must be **generalizable**, **robust**, and aligned with best practices.
-
-Measure Name: {measure_name}
-
-DAX Expression:
+ORIGINAL CODE:
 {dax_expression}
 
-Provide your response in this exact format:
+REQUIREMENTS:
+- Make it efficient for large semantic models with many visuals
+- Return a scalar value (text or numeric), not a table
+- Use ISFILTERED to detect filtered columns
+- Use HASONEVALUE or SELECTEDVALUE for single selections
+- Use CONCATENATEX for multiple selected values as comma-separated strings
+- Avoid VALUES directly in conditional logic unless wrapped in a scalar function
+- Ensure compatibility with cards, tables, matrix, and tooltips
+- Add inline comments for clarity
+- Suggest performance improvements for large datasets
+
+Please provide your response in this EXACT format (use these exact headers):
 
 OPTIMIZED DAX:
-[Your optimized DAX code with inline comments]
+[write the optimized DAX code here]
 
 IMPROVEMENTS MADE:
-[Bullet points of specific changes]
+[list the specific changes you made]
 
 EDGE CASES HANDLED:
-[Bullet points of edge cases addressed]
+[list edge cases you addressed]
 
 PERFORMANCE NOTES:
-[Any performance considerations or warnings]
+[note any performance considerations]
 """
 
 
@@ -142,7 +139,7 @@ def optimize_dax_expression(measure_name, dax_expression):
             messages=[
                 {
                     "role": "system", 
-                    "content": "You are an expert DAX optimization specialist with deep knowledge of Power BI semantic models, performance optimization, and best practices. You focus on creating efficient, maintainable, and robust DAX expressions."
+                    "content": "You are an expert DAX optimization specialist. Always structure your responses with these exact section headers: OPTIMIZED DAX:, IMPROVEMENTS MADE:, EDGE CASES HANDLED:, PERFORMANCE NOTES:. Be consistent with this format."
                 },
                 {
                     "role": "user", 
@@ -168,28 +165,59 @@ def parse_response(response):
         "performance": ""
     }
     
-    sections = {
-        "OPTIMIZED DAX:": "optimized",
-        "IMPROVEMENTS MADE:": "improvements",
-        "EDGE CASES HANDLED:": "edge_cases",
-        "PERFORMANCE NOTES:": "performance"
-    }
+    # Try to find sections with various header formats
+    sections = [
+        ("OPTIMIZED DAX", "optimized"),
+        ("OPTIMIZED", "optimized"),
+        ("IMPROVEMENTS MADE", "improvements"),
+        ("IMPROVEMENTS", "improvements"),
+        ("EDGE CASES HANDLED", "edge_cases"),
+        ("EDGE CASES", "edge_cases"),
+        ("PERFORMANCE NOTES", "performance"),
+        ("PERFORMANCE", "performance")
+    ]
     
     current_section = None
     lines = response.split('\n')
+    section_found = False
     
-    for line in lines:
+    for i, line in enumerate(lines):
+        line_upper = line.upper().strip()
+        
         # Check if this line is a section header
         found_header = False
-        for header, key in sections.items():
-            if header in line:
+        for header, key in sections:
+            if header in line_upper and (
+                line_upper.startswith(header) or 
+                line_upper.startswith("**" + header) or
+                line_upper.startswith("###") or
+                line_upper.startswith("##")
+            ):
                 current_section = key
                 found_header = True
+                section_found = True
                 break
         
-        # If not a header and we're in a section, add the line
-        if not found_header and current_section:
-            result[current_section] += line + "\n"
+        if found_header:
+            continue
+        
+        # If we're in a section, capture content
+        if current_section:
+            # Skip markdown code fence markers but track them
+            stripped = line.strip()
+            if stripped == '```' or stripped == '```dax' or stripped.startswith('```'):
+                continue
+            
+            # Add content to current section
+            if line.strip():
+                result[current_section] += line + "\n"
+    
+    # Fallback: If no sections were found, put everything in optimized
+    if not section_found:
+        # Try to extract just the code if wrapped in code blocks
+        cleaned = response.replace('```dax', '').replace('```', '').strip()
+        result["optimized"] = cleaned
+        result["improvements"] = "See raw response for details"
     
     # Clean up whitespace
     for key in result:
@@ -236,13 +264,32 @@ def process_dax_file(input_file, output_file):
     results = []
     
     for i, expr in enumerate(expressions, 1):
-        print(f"[{i}/{total}] Processing: {expr['measure_name'][:50]}... ", end='', flush=True)
+        measure_display = expr['measure_name'][:50] + "..." if len(expr['measure_name']) > 50 else expr['measure_name']
+        print(f"[{i}/{total}] Processing: {measure_display} ", end='', flush=True)
         
         # Get optimization from Copilot
         result = optimize_dax_expression(expr['measure_name'], expr['dax_code'])
         
-        # Parse response
-        parsed = parse_response(result)
+        # Check if there was an error
+        if result.startswith("ERROR:"):
+            print(f"❌")
+            print(f"    Error: {result}")
+            parsed = {
+                "optimized": "",
+                "improvements": "",
+                "edge_cases": "",
+                "performance": f"Error occurred: {result}"
+            }
+        else:
+            # Parse response
+            parsed = parse_response(result)
+            
+            # If parsing failed (all sections empty), store raw response
+            if not any([parsed["optimized"], parsed["improvements"], parsed["edge_cases"], parsed["performance"]]):
+                print(f"⚠️ (parsing issue)")
+                parsed["performance"] = f"Raw response:\n{result[:500]}..."
+            else:
+                print("✓")
         
         # Store results
         results.append({
@@ -252,10 +299,9 @@ def process_dax_file(input_file, output_file):
             "optimized": parsed["optimized"],
             "improvements": parsed["improvements"],
             "edge_cases": parsed["edge_cases"],
-            "performance": parsed["performance"]
+            "performance": parsed["performance"],
+            "raw_response": result  # Keep raw response for debugging
         })
-        
-        print("✓")
         
         # Rate limiting (adjust if needed)
         if i < total:
@@ -265,9 +311,29 @@ def process_dax_file(input_file, output_file):
     print(f"\n💾 Writing output to: {output_file}")
     write_markdown_output(results, output_file)
     
+    # Also write raw responses for debugging if needed
+    debug_file = output_file.replace('.md', '_debug.txt')
+    write_debug_output(results, debug_file)
+    
     print(f"\n✅ Complete!")
     print(f"   📄 Output file: {output_file}")
+    print(f"   🔍 Debug file: {debug_file}")
     print(f"   📊 Processed: {len(results)} expression(s)\n")
+
+
+def write_debug_output(results, debug_file):
+    """Write raw API responses for debugging"""
+    with open(debug_file, 'w', encoding='utf-8') as f:
+        f.write("=" * 100 + "\n")
+        f.write("DEBUG OUTPUT - RAW API RESPONSES\n")
+        f.write("=" * 100 + "\n\n")
+        
+        for r in results:
+            f.write(f"\n{'=' * 100}\n")
+            f.write(f"EXPRESSION #{r['number']}: {r['measure_name']}\n")
+            f.write(f"{'=' * 100}\n\n")
+            f.write(r['raw_response'])
+            f.write(f"\n\n")
 
 
 def write_markdown_output(results, output_file):
