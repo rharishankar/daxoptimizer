@@ -1,0 +1,9 @@
+Total Points = SUM(Game[Points])
+
+Points Per Game = DIVIDE(SUM(Game[Points]), COUNTROWS(Game))
+
+Active Players = CALCULATE(COUNTROWS(Player), Player[Status] = "Active")
+
+Selected Team = IF(HASONEVALUE(Team[Name]), VALUES(Team[Name]), "Multiple")
+
+Points This Season = TOTALYTD(SUM(Game[Points]), Calendar[Date])
