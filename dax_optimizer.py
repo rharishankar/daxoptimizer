@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 DAX Expression Optimizer using GitHub Copilot API
-Usage: python dax_optimizer.py input.txt output.txt
+Usage: python dax_optimizer.py input.txt output.md
 """
 
 import os
 import sys
 import time
+import re
 from openai import OpenAI
 
 # GitHub Models API setup
@@ -32,7 +33,7 @@ Requirements:
 
 This expression is part of a broader model with 100+ DAX measures and visualizations, so the solution must be **generalizable**, **robust**, and aligned with best practices.
 
-Please rewrite or improve the expression accordingly.
+Measure Name: {measure_name}
 
 DAX Expression:
 {dax_expression}
@@ -53,10 +54,87 @@ PERFORMANCE NOTES:
 """
 
 
-def optimize_dax_expression(dax_expression, line_number):
+def parse_dax_file(content):
+    """Parse DAX file with dashed separators and measure names"""
+    
+    expressions = []
+    
+    # Split by lines that are mostly dashes (at least 10 dashes)
+    lines = content.split('\n')
+    
+    current_measure = None
+    current_dax = []
+    in_dax_block = False
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        # Check if line is a separator (lots of dashes or equals)
+        is_separator = re.match(r'^[-=]{10,}$', stripped)
+        
+        # Check if line is a header like "DAX MEASURES - Folder1"
+        is_header = 'DAX MEASURES' in stripped or 'Folder' in stripped
+        
+        # Check if line is a measure name like [Measure].[Patient State]
+        is_measure_name = stripped.startswith('[') and ']' in stripped
+        
+        if is_separator:
+            # If we have accumulated DAX code, save it
+            if current_measure and current_dax:
+                dax_code = '\n'.join(current_dax).strip()
+                if dax_code:
+                    expressions.append({
+                        'measure_name': current_measure,
+                        'dax_code': dax_code
+                    })
+            
+            # Reset for next expression
+            current_measure = None
+            current_dax = []
+            in_dax_block = False
+            
+        elif is_header:
+            # Skip headers
+            continue
+            
+        elif is_measure_name:
+            # Save previous expression if exists
+            if current_measure and current_dax:
+                dax_code = '\n'.join(current_dax).strip()
+                if dax_code:
+                    expressions.append({
+                        'measure_name': current_measure,
+                        'dax_code': dax_code
+                    })
+            
+            # Start new measure
+            current_measure = stripped
+            current_dax = []
+            in_dax_block = True
+            
+        elif stripped and in_dax_block:
+            # Add to current DAX code
+            current_dax.append(stripped)
+    
+    # Don't forget the last expression
+    if current_measure and current_dax:
+        dax_code = '\n'.join(current_dax).strip()
+        if dax_code:
+            expressions.append({
+                'measure_name': current_measure,
+                'dax_code': dax_code
+            })
+    
+    return expressions
+
+
+def optimize_dax_expression(measure_name, dax_expression):
     """Send DAX to GitHub Copilot for optimization"""
     
-    prompt = COPILOT_INSTRUCTION.format(dax_expression=dax_expression)
+    prompt = COPILOT_INSTRUCTION.format(
+        measure_name=measure_name,
+        dax_expression=dax_expression
+    )
     
     try:
         response = client.chat.completions.create(
@@ -102,14 +180,16 @@ def parse_response(response):
     
     for line in lines:
         # Check if this line is a section header
+        found_header = False
         for header, key in sections.items():
             if header in line:
                 current_section = key
+                found_header = True
                 break
-        else:
-            # Add content to current section
-            if current_section:
-                result[current_section] += line + "\n"
+        
+        # If not a header and we're in a section, add the line
+        if not found_header and current_section:
+            result[current_section] += line + "\n"
     
     # Clean up whitespace
     for key in result:
@@ -134,38 +214,41 @@ def process_dax_file(input_file, output_file):
         print(f"❌ Error reading file: {e}")
         return
     
-    # Split expressions (assuming each expression is separated by blank line)
-    # Adjust this logic based on your file format
-    dax_expressions = [expr.strip() for expr in content.split('\n\n') if expr.strip()]
+    # Parse expressions
+    print(f"🔍 Parsing DAX expressions...")
+    expressions = parse_dax_file(content)
     
-    # If expressions are line-by-line instead, uncomment this:
-    # dax_expressions = [line.strip() for line in content.split('\n') if line.strip()]
-    
-    if not dax_expressions:
+    if not expressions:
         print("❌ No DAX expressions found in file!")
+        print("\nExpected format:")
+        print("  [Measure].[Name]")
+        print("  ")
+        print("  DAX code here")
+        print("  --------------------")
         return
     
-    total = len(dax_expressions)
+    total = len(expressions)
     
-    print(f"🔍 Found {total} DAX expression(s)")
+    print(f"✅ Found {total} DAX expression(s)")
     print(f"⏱️  Estimated time: ~{total * 2} seconds ({total * 2 / 60:.1f} minutes)")
     print(f"🚀 Starting optimization...\n")
     
     results = []
     
-    for i, dax in enumerate(dax_expressions, 1):
-        print(f"[{i}/{total}] Processing expression {i}... ", end='', flush=True)
+    for i, expr in enumerate(expressions, 1):
+        print(f"[{i}/{total}] Processing: {expr['measure_name'][:50]}... ", end='', flush=True)
         
         # Get optimization from Copilot
-        result = optimize_dax_expression(dax, i)
+        result = optimize_dax_expression(expr['measure_name'], expr['dax_code'])
         
         # Parse response
         parsed = parse_response(result)
         
         # Store results
         results.append({
-            "line": i,
-            "original": dax,
+            "number": i,
+            "measure_name": expr['measure_name'],
+            "original": expr['dax_code'],
             "optimized": parsed["optimized"],
             "improvements": parsed["improvements"],
             "edge_cases": parsed["edge_cases"],
@@ -180,61 +263,67 @@ def process_dax_file(input_file, output_file):
     
     # Write output
     print(f"\n💾 Writing output to: {output_file}")
-    write_output(results, output_file)
+    write_markdown_output(results, output_file)
     
     print(f"\n✅ Complete!")
     print(f"   📄 Output file: {output_file}")
     print(f"   📊 Processed: {len(results)} expression(s)\n")
 
 
-def write_output(results, output_file):
-    """Write formatted output file"""
+def write_markdown_output(results, output_file):
+    """Write formatted Markdown output file"""
     
     with open(output_file, 'w', encoding='utf-8') as f:
         # Header
-        f.write("=" * 120 + "\n")
-        f.write("DAX OPTIMIZATION REPORT\n".center(120))
-        f.write(f"Total Expressions Optimized: {len(results)}\n".center(120))
-        f.write("=" * 120 + "\n\n")
+        f.write("# DAX Optimization Report\n\n")
+        f.write(f"**Total Expressions Optimized:** {len(results)}\n\n")
+        f.write("---\n\n")
         
+        # Table of Contents
+        f.write("## Table of Contents\n\n")
         for r in results:
-            # Expression header
-            f.write(f"\n{'═' * 120}\n")
-            f.write(f"EXPRESSION #{r['line']}\n")
-            f.write(f"{'═' * 120}\n\n")
+            measure_safe = r['measure_name'].replace('[', '').replace(']', '').replace('.', '-')
+            f.write(f"{r['number']}. [{r['measure_name']}](#{r['number']}-{measure_safe.lower().replace(' ', '-')})\n")
+        f.write("\n---\n\n")
+        
+        # Each expression
+        for r in results:
+            f.write(f"## {r['number']}. {r['measure_name']}\n\n")
             
             # Original DAX
-            f.write("┌─ ORIGINAL DAX " + "─" * 103 + "\n")
-            for line in r['original'].split('\n'):
-                f.write(f"│ {line}\n")
-            f.write("└" + "─" * 119 + "\n\n")
+            f.write("### 📋 Original DAX\n\n")
+            f.write("```dax\n")
+            f.write(r['original'])
+            f.write("\n```\n\n")
             
             # Optimized DAX
-            f.write("┌─ OPTIMIZED DAX " + "─" * 102 + "\n")
-            for line in r['optimized'].split('\n'):
-                f.write(f"│ {line}\n")
-            f.write("└" + "─" * 119 + "\n\n")
+            f.write("### ✨ Optimized DAX\n\n")
+            if r['optimized']:
+                f.write("```dax\n")
+                f.write(r['optimized'])
+                f.write("\n```\n\n")
+            else:
+                f.write("*No optimization provided*\n\n")
             
             # Improvements
             if r['improvements']:
-                f.write("┌─ IMPROVEMENTS MADE " + "─" * 98 + "\n")
-                for line in r['improvements'].split('\n'):
-                    f.write(f"│ {line}\n")
-                f.write("└" + "─" * 119 + "\n\n")
+                f.write("### 🔧 Improvements Made\n\n")
+                f.write(r['improvements'])
+                f.write("\n\n")
             
             # Edge Cases
             if r['edge_cases']:
-                f.write("┌─ EDGE CASES HANDLED " + "─" * 97 + "\n")
-                for line in r['edge_cases'].split('\n'):
-                    f.write(f"│ {line}\n")
-                f.write("└" + "─" * 119 + "\n\n")
+                f.write("### 🛡️ Edge Cases Handled\n\n")
+                f.write(r['edge_cases'])
+                f.write("\n\n")
             
-            # Performance Notes
+            # Performance
             if r['performance']:
-                f.write("┌─ PERFORMANCE NOTES " + "─" * 98 + "\n")
-                for line in r['performance'].split('\n'):
-                    f.write(f"│ {line}\n")
-                f.write("└" + "─" * 119 + "\n\n")
+                f.write("### ⚡ Performance Notes\n\n")
+                f.write(r['performance'])
+                f.write("\n\n")
+            
+            f.write("---\n\n")
 
 
 def main():
@@ -246,7 +335,7 @@ def main():
         print("\nUsage:")
         print("  python dax_optimizer.py <input_file> <output_file>")
         print("\nExample:")
-        print("  python dax_optimizer.py my_dax.txt optimized_dax.txt")
+        print("  python dax_optimizer.py input_file.txt output.md")
         print()
         sys.exit(1)
     
@@ -261,6 +350,10 @@ def main():
     
     input_file = sys.argv[1]
     output_file = sys.argv[2]
+    
+    # Auto-add .md extension if not present
+    if not output_file.endswith('.md'):
+        output_file += '.md'
     
     # Process the file
     process_dax_file(input_file, output_file)
